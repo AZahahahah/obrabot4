@@ -1,0 +1,70 @@
+name: Deploy private application
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact private application branch-head commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kakpeople-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the public orchestrator
+        uses: actions/checkout@v4
+
+      - name: Check out the approved private branch head
+        uses: actions/checkout@v4
+        with:
+          repository: AZahahahah/luma
+          ref: ops/regru-migration
+          path: private-app
+          ssh-key: ${{ secrets.LUMA_READ_SSH_KEY }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: private-app/uv.lock
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: private-app/frontend/package-lock.json
+
+      - name: Install PDF test tools
+        run: sudo apt-get update && sudo apt-get install --yes poppler-utils
+
+      - name: Test, build and deploy the exact private commit
+        env:
+          PRIVATE_APP_DIR: ${{ github.workspace }}/private-app
+          TARGET_SHA: ${{ inputs.target_sha }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEPLOY_HOST: ${{ secrets.REG_RU_HOST }}
+          DEPLOY_USER: ${{ secrets.REG_RU_USER }}
+          DEPLOY_KEY: ${{ secrets.REG_RU_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.REG_RU_KNOWN_HOSTS }}
+        run: bash scripts/deploy-production.sh
+
