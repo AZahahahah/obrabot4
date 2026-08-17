@@ -1,0 +1,60 @@
+name: OpenAI profile worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact deployed private application commit
+        required: true
+        type: string
+      operation:
+        description: Queued operation
+        required: true
+        type: choice
+        options:
+          - audit
+          - repair
+      run_id:
+        description: Queued operation UUID or auto
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kakpeople-profile-worker
+  cancel-in-progress: false
+
+jobs:
+  profile-audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the public worker
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the bounded worker
+        run: python -m pip install .
+
+      - name: Process the queued operation
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          PROFILE_OPERATION: ${{ inputs.operation }}
+          AUDIT_RUN_ID: ${{ inputs.run_id }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEPLOY_HOST: ${{ secrets.REG_RU_HOST }}
+          DEPLOY_USER: ${{ secrets.REG_RU_USER }}
+          DEPLOY_KEY: ${{ secrets.REG_RU_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.REG_RU_KNOWN_HOSTS }}
+        run: bash scripts/run-profile-audit-worker.sh
+
