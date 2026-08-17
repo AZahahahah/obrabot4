@@ -13,12 +13,37 @@ AUDIT_WORKFLOW = ROOT / ".github" / "workflows" / "profile-audit.yml"
 AUDIT_RUNNER = ROOT / "scripts" / "run-profile-audit-worker.sh"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-production.yml"
 DEPLOY_RUNNER = ROOT / "scripts" / "deploy-production.sh"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def _load_workflow(path: Path) -> dict:
     document = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     assert isinstance(document, dict)
     return document
+
+
+def test_public_ci_uses_no_secrets_and_runs_the_complete_worker_suite() -> None:
+    workflow = _load_workflow(CI_WORKFLOW)
+
+    assert workflow["name"] == "Public worker checks"
+    assert set(workflow["on"]) == {"push", "pull_request"}
+    assert workflow["permissions"] == {"contents": "read"}
+    assert set(workflow["jobs"]) == {"test"}
+    job = workflow["jobs"]["test"]
+    assert job["runs-on"] == "ubuntu-24.04"
+    assert job["timeout-minutes"] == "10"
+    assert [step.get("uses") for step in job["steps"] if "uses" in step] == [
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+    ]
+    run_steps = "\n".join(
+        str(step.get("run", "")) for step in job["steps"] if "run" in step
+    )
+    assert "pip install -e '.[test]'" in run_steps
+    assert "python -m pytest -q -W error" in run_steps
+    assert "bash -n scripts/run-profile-audit-worker.sh" in run_steps
+    assert "bash -n scripts/deploy-production.sh" in run_steps
+    assert "secrets." not in str(workflow)
 
 
 def test_profile_audit_workflow_is_manual_bounded_and_oidc_authenticated() -> None:
