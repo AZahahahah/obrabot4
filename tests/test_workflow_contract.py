@@ -96,6 +96,7 @@ def test_openai_relay_is_tls_only_source_restricted_and_secret_free() -> None:
     assert "OPENAI_API_KEY" not in script
     assert "Authorization" not in script
     assert "set -x" not in script
+    assert "/dev/stdin" not in script
 
 
 def test_private_application_checks_are_manual_exact_and_do_not_deploy() -> None:
