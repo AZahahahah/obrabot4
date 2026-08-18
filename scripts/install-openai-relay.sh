@@ -79,7 +79,8 @@ ${RELAY_HOSTNAME} {
 EOF
 chmod 0644 /etc/caddy/Caddyfile
 
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+chown -R caddy:caddy /var/log/caddy
+runuser --user caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 systemctl enable --now caddy
 systemctl reload caddy
 systemctl enable --now fail2ban
