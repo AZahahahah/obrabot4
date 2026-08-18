@@ -52,7 +52,7 @@ apt-get update
 apt-get install --yes caddy
 
 install -d -o caddy -g caddy -m 0750 /var/log/caddy
-install -m 0644 /dev/stdin /etc/caddy/Caddyfile <<EOF
+tee /etc/caddy/Caddyfile >/dev/null <<EOF
 {
   admin 127.0.0.1:2019
 }
@@ -77,6 +77,7 @@ ${RELAY_HOSTNAME} {
   }
 }
 EOF
+chmod 0644 /etc/caddy/Caddyfile
 
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 systemctl enable --now caddy
