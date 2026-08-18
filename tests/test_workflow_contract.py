@@ -14,6 +14,9 @@ AUDIT_RUNNER = ROOT / "scripts" / "run-profile-audit-worker.sh"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-production.yml"
 DEPLOY_RUNNER = ROOT / "scripts" / "deploy-production.sh"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+GPU_INSTALLER = ROOT / "scripts" / "install-gpu-model.sh"
+GPU_COMPOSE = ROOT / "gpu" / "compose.yaml"
+PRIVATE_TEST_WORKFLOW = ROOT / ".github" / "workflows" / "test-private-application.yml"
 
 
 def _load_workflow(path: Path) -> dict:
@@ -43,7 +46,71 @@ def test_public_ci_uses_no_secrets_and_runs_the_complete_worker_suite() -> None:
     assert "python -m pytest -q -W error" in run_steps
     assert "bash -n scripts/run-profile-audit-worker.sh" in run_steps
     assert "bash -n scripts/deploy-production.sh" in run_steps
+    assert "bash -n scripts/install-gpu-model.sh" in run_steps
     assert "secrets." not in str(workflow)
+
+
+def test_gpu_model_is_pinned_bounded_and_not_publicly_unauthenticated() -> None:
+    compose = yaml.safe_load(GPU_COMPOSE.read_text(encoding="utf-8"))
+    service = compose["services"]["model"]
+
+    assert service["image"] == "vllm/vllm-openai:v0.23.0"
+    assert service["restart"] == "unless-stopped"
+    assert service["ports"] == ["8000:8000"]
+    command = " ".join(service["command"])
+    assert "Qwen/Qwen3-14B-AWQ" in command
+    assert "--served-model-name kakpeople-qwen3-14b" in command
+    assert "--api-key ${MODEL_API_KEY}" in command
+    assert "--max-model-len 8192" in command
+    assert "--gpu-memory-utilization 0.90" in command
+    assert "--enable-prefix-caching" in command
+    assert "--generation-config vllm" in command
+
+
+def test_gpu_installer_requires_one_source_ip_and_never_echoes_the_key() -> None:
+    script = GPU_INSTALLER.read_text(encoding="utf-8")
+
+    assert "APP_SERVER_IP" in script
+    assert "MODEL_API_KEY" in script
+    assert "DOCKER-USER" in script
+    assert "--dport 8000" in script
+    assert "-j DROP" in script
+    assert "set -x" not in script
+    assert "printf '%s' \"$MODEL_API_KEY\"" not in script
+    assert "echo \"$MODEL_API_KEY\"" not in script
+
+
+def test_private_application_checks_are_manual_exact_and_do_not_deploy() -> None:
+    workflow = _load_workflow(PRIVATE_TEST_WORKFLOW)
+
+    assert workflow["name"] == "Private application checks"
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+    assert set(workflow["on"]["workflow_dispatch"]["inputs"]) == {"target_sha"}
+    assert workflow["permissions"] == {"contents": "read"}
+    job = workflow["jobs"]["test"]
+    assert job["runs-on"] == "ubuntu-24.04"
+    assert job["timeout-minutes"] == "30"
+    checkouts = [
+        step for step in job["steps"] if step.get("uses") == "actions/checkout@v4"
+    ]
+    assert len(checkouts) == 2
+    assert checkouts[1]["with"] == {
+        "repository": "AZahahahah/luma",
+        "ref": "${{ inputs.target_sha }}",
+        "path": "private-app",
+        "ssh-key": "${{ secrets.LUMA_READ_SSH_KEY }}",
+        "persist-credentials": "false",
+    }
+    test_step = next(
+        step for step in job["steps"] if step.get("name") == "Run private application checks"
+    )
+    assert test_step["working-directory"] == "private-app"
+    serialized = str(workflow)
+    assert "pytest tests_web tests -q -W error" in serialized
+    assert "npm --prefix frontend test -- --run" in serialized
+    assert "npm --prefix frontend run build" in serialized
+    assert "REG_RU_" not in serialized
+    assert "deploy" not in workflow["jobs"]
 
 
 def test_profile_audit_workflow_is_manual_bounded_and_oidc_authenticated() -> None:

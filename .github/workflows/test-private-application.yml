@@ -1,0 +1,71 @@
+name: Private application checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact private application commit SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kakpeople-private-check-${{ inputs.target_sha }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the public orchestrator
+        uses: actions/checkout@v4
+
+      - name: Validate immutable target
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 64
+
+      - name: Check out the exact private commit
+        uses: actions/checkout@v4
+        with:
+          repository: AZahahahah/luma
+          ref: ${{ inputs.target_sha }}
+          path: private-app
+          ssh-key: ${{ secrets.LUMA_READ_SSH_KEY }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: private-app/uv.lock
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: private-app/frontend/package-lock.json
+
+      - name: Install PDF test tools
+        run: sudo apt-get update && sudo apt-get install --yes poppler-utils
+
+      - name: Run private application checks
+        working-directory: private-app
+        run: |
+          uv sync --locked --extra test
+          uv run python -m pytest tests_web tests -q -W error
+          npm --prefix frontend ci
+          npm --prefix frontend test -- --run
+          npm --prefix frontend run build
