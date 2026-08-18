@@ -97,6 +97,9 @@ def test_openai_relay_is_tls_only_source_restricted_and_secret_free() -> None:
     assert "Authorization" not in script
     assert "set -x" not in script
     assert "/dev/stdin" not in script
+    assert "chown -R caddy:caddy /var/log/caddy" in script
+    assert "runuser --user caddy -- caddy validate" in script
+    assert "\ncaddy validate --config" not in script
 
 
 def test_private_application_checks_are_manual_exact_and_do_not_deploy() -> None:
