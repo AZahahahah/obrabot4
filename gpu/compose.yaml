@@ -1,0 +1,41 @@
+services:
+  model:
+    image: vllm/vllm-openai:v0.23.0
+    restart: unless-stopped
+    ipc: host
+    ports:
+      - "8000:8000"
+    env_file:
+      - model.env
+    volumes:
+      - model-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command:
+      - --model
+      - Qwen/Qwen3-14B-AWQ
+      - --served-model-name
+      - kakpeople-qwen3-14b
+      - --api-key
+      - ${MODEL_API_KEY}
+      - --dtype
+      - auto
+      - --quantization
+      - awq
+      - --max-model-len
+      - "8192"
+      - --gpu-memory-utilization
+      - "0.90"
+      - --max-num-seqs
+      - "8"
+      - --enable-prefix-caching
+      - --generation-config
+      - vllm
+
+volumes:
+  model-cache:
