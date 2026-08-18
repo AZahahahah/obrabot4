@@ -37,3 +37,4 @@ jobs:
           bash -n scripts/run-profile-audit-worker.sh
           bash -n scripts/deploy-production.sh
           bash -n scripts/install-gpu-model.sh
+          bash -n scripts/install-openai-relay.sh

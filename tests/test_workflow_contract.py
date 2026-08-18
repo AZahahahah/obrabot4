@@ -16,6 +16,7 @@ DEPLOY_RUNNER = ROOT / "scripts" / "deploy-production.sh"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 GPU_INSTALLER = ROOT / "scripts" / "install-gpu-model.sh"
 GPU_COMPOSE = ROOT / "gpu" / "compose.yaml"
+RELAY_INSTALLER = ROOT / "scripts" / "install-openai-relay.sh"
 PRIVATE_TEST_WORKFLOW = ROOT / ".github" / "workflows" / "test-private-application.yml"
 
 
@@ -47,6 +48,7 @@ def test_public_ci_uses_no_secrets_and_runs_the_complete_worker_suite() -> None:
     assert "bash -n scripts/run-profile-audit-worker.sh" in run_steps
     assert "bash -n scripts/deploy-production.sh" in run_steps
     assert "bash -n scripts/install-gpu-model.sh" in run_steps
+    assert "bash -n scripts/install-openai-relay.sh" in run_steps
     assert "secrets." not in str(workflow)
 
 
@@ -78,6 +80,22 @@ def test_gpu_installer_requires_one_source_ip_and_never_echoes_the_key() -> None
     assert "set -x" not in script
     assert "printf '%s' \"$MODEL_API_KEY\"" not in script
     assert "echo \"$MODEL_API_KEY\"" not in script
+
+
+def test_openai_relay_is_tls_only_source_restricted_and_secret_free() -> None:
+    script = RELAY_INSTALLER.read_text(encoding="utf-8")
+
+    assert "APP_SERVER_IP" in script
+    assert "RELAY_HOSTNAME" in script
+    assert "remote_ip ${APP_SERVER_IP}/32" in script
+    assert "reverse_proxy https://api.openai.com" in script
+    assert "header_up Host api.openai.com" in script
+    assert "respond 403" in script
+    assert "ufw allow 80/tcp" in script
+    assert "ufw allow 443/tcp" in script
+    assert "OPENAI_API_KEY" not in script
+    assert "Authorization" not in script
+    assert "set -x" not in script
 
 
 def test_private_application_checks_are_manual_exact_and_do_not_deploy() -> None:
